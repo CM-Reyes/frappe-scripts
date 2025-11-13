@@ -1,0 +1,61 @@
+#!/bin/bash
+
+# --- Configuration ---
+CONFIG_FILE="$HOME/.frappe_docker_path"
+CONTAINER_NAME="devcontainer-frappe-1"
+SEARCH_DIR_NAME="frappe_docker"
+
+# --- Function: Find the folder ---
+get_project_dir() {
+    # 1. Check if we have a saved path
+    if [ -f "$CONFIG_FILE" ]; then
+        SAVED_PATH=$(cat "$CONFIG_FILE")
+        if [ -d "$SAVED_PATH" ]; then
+            echo "$SAVED_PATH"
+            return
+        fi
+    fi
+
+    # 2. If no saved path, search for it (this might take a moment)
+    echo "Searching for '$SEARCH_DIR_NAME' in $HOME..." >&2
+    
+    # Find directory named frappe_docker, stop at the first one found
+    FOUND_PATH=$(find "$HOME" -type d -name "$SEARCH_DIR_NAME" -print -quit 2>/dev/null)
+
+    # 3. Validate and Save
+    if [ -n "$FOUND_PATH" ] && [ -d "$FOUND_PATH/.devcontainer" ]; then
+        echo "Found project at: $FOUND_PATH" >&2
+        echo "$FOUND_PATH" > "$CONFIG_FILE" # Save it for next time
+        echo "$FOUND_PATH"
+    else
+        echo ""
+    fi
+}
+
+# --- Main Execution ---
+
+# Get the Project Directory
+PROJECT_ROOT=$(get_project_dir)
+DOCKER_DIR="$PROJECT_ROOT/.devcontainer"
+
+# Validate path
+if [ -z "$PROJECT_ROOT" ] || [ ! -d "$DOCKER_DIR" ]; then
+    echo "Error: Could not find '$SEARCH_DIR_NAME' containing a .devcontainer folder."
+    echo "Please make sure the folder exists inside $HOME."
+    exit 1
+fi
+
+# Start Docker
+echo "Using Project: $PROJECT_ROOT"
+echo "Ensuring containers are up..."
+cd "$DOCKER_DIR"
+docker compose -f docker-compose.yml up -d
+
+if [ $? -ne 0 ]; then
+    echo "Docker Compose failed."
+    exit 1
+fi
+
+# Run Bench
+echo "Starting Bench Server..."
+docker exec -it -w /workspace/development/frappe-bench "$CONTAINER_NAME" bench start
